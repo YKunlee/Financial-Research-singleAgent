@@ -205,3 +205,9 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Backup folder for old frontend files (已废弃的 FastAPI 前端)
+backup_old_frontend/
+
+# Chainlit runtime files (运行时生成的文件)
+.files/

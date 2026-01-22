@@ -7,8 +7,10 @@ Financial Research Agent automates equity research by collecting market data, fi
 
 ```
 Financial-Research-multiAgent/
-├── main.py                 # FastAPI entry / FastAPI 入口
+├── app.py                  # Chainlit entry / Chainlit 入口
+├── .chainlit               # Chainlit config / Chainlit 配置
 ├── .env                    # Environment variables / 环境变量
+├── requirements.txt        # Dependencies / 依赖列表
 ├── src/
 │   ├── models.py           # Multi-model manager / 多模型配置管理
 │   ├── state.py            # LangGraph State schema / LangGraph State 结构
@@ -23,23 +25,49 @@ Financial-Research-multiAgent/
 │   └── prompts/            # Prompt configs / Prompt 配置
 │       ├── analyzer.yaml   # Intent parsing / 意图解析
 │       └── assistant.yaml  # Small talk / 日常对话
-├── templates/              # Frontend templates / 前端模板
-│   ├── index.html          # Chat page / Chat 页面
-│   └── components/         # Components / 组件
-│       ├── chat_bubble.html
-│       └── fin_card.html
-└── static/                 # Static assets / 静态资源
-    ├── css/
-    │   └── chatgpt.css
-    └── js/
-        └── chat.js
+└── tests/                  # Test files / 测试文件
 ```
 
 ## Tech Stack / 用到的技术
 - **LangGraph**: Graph orchestration, parallel fan-out/fan-in, and state passing / 负责 StateGraph 编排、并行 Fan-out/Fan-in 与状态传递
-- **FastAPI**: Web server entry and API layer / Web 服务入口与接口层
+- **Chainlit**: Modern conversational UI framework / 现代化对话式界面框架
 - **Multi-Model Manager**: Unified LLM configuration management / 统一管理多模型配置
   - GPT-4o: Complex financial analysis / 复杂财务分析
   - DeepSeek/GPT-4o-mini: User chat & light tasks / 用户对话与轻量任务
-- **LLM**: Intent and entity extraction via prompts / 意图识别与实体抽取（通过 prompts 配置）
-- **Template + Static**: UI rendering and basic interactions / 前端卡片展示与基础交互
+- **LLM**: Intent and entity extraction via prompts / 意图识别与实体抽取(通过 prompts 配置)
+
+## Quick Start / 快速开始
+
+### 1. 安装依赖
+```bash
+pip install -r requirements.txt
+```
+
+### 2. 配置环境变量
+在项目根目录创建 `.env` 文件：
+```bash
+# 根据使用的模型配置对应的 API Key
+GPT_4O_MINI_API_KEY=your_api_key_here
+# 或
+DEEPSEEK_CHAT_API_KEY=your_api_key_here
+```
+
+### 3. 启动应用
+```bash
+# 启动 Chainlit 前端（带热重载）
+python -m chainlit run app.py -w
+```
+
+应用将在浏览器中自动打开，访问地址：`http://localhost:8000`，直接输入公司名或问题即可查询
+
+### 4. 使用示例
+- **查询财务数据**：输入 "腾讯的市值是多少？"
+- **查询上市信息**：输入 "小米什么时候上市的？"
+- **日常对话**：输入 "你好"
+
+## Features / 功能特性
+- ✅ **实时流式响应**：展示 Agent 处理进度
+- ✅ **智能意图识别**：自动判断查询类型（财务/上市/对话）
+- ✅ **并行数据获取**：同时调用多个数据工具提升效率
+- ✅ **富文本展示**：Markdown 格式化输出研究报告
+- ✅ **错误处理**：友好的异常提示和降级策略

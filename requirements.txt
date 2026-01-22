@@ -1,0 +1,19 @@
+# 核心依赖
+langgraph>=0.2.0
+langchain>=0.3.0
+langchain-core>=0.3.0
+langchain-openai>=0.2.0
+
+# Chainlit 前端框架
+chainlit>=1.0.0
+
+# 环境变量管理
+python-dotenv>=1.0.0
+
+# 数据处理
+pydantic>=2.0.0
+pyyaml>=6.0
+
+# 可选：FastAPI (如需保留原 API 接口)
+# fastapi>=0.104.0
+# uvicorn>=0.24.0
