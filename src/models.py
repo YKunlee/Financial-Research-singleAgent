@@ -10,132 +10,120 @@
 """
 
 import os
-from typing import Optional
+from typing import Optional, Dict, Any
 from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, Field
+
+
+# 配置管理 - 集中管理参数
+class ModelSettings(BaseModel):
+    """模型基础配置 - 像身份证一样集中存储所有 API 钥匙和默认设置"""
+    openai_api_key: str = Field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
+    deepseek_api_key: str = Field(default_factory=lambda: os.getenv("DEEPSEEK_API_KEY", ""))
+    
+    # 默认参数
+    analyzer_model_name: str = "gpt-4o-mini"
+    chat_model_name: str = "deepseek-chat"
+    fallback_model_name: str = "gpt-4o-mini"
 
 
 class ModelManager:
-    """模型管理器 - 负责初始化和提供不同用途的AI模型"""
+    """模型管理器 - 工业级解耦实现,像快递站统一管理所有模型配送"""
     
     def __init__(self):
-        """
-        初始化模型管理器
-        从环境变量中加载 API Key
-        """
-        self.openai_api_key = os.getenv("OPENAI_API_KEY")
-        self.deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
+        self.settings = ModelSettings()
+        self._models: Dict[str, ChatOpenAI] = {}
         
-        if not self.openai_api_key:
-            raise ValueError("未找到 OPENAI_API_KEY 环境变量，请在 .env 文件中配置")
-        
-        # 初始化模型实例
-        self._analyzer_model = None
-        self._chat_model = None
-    
+        # 预校验 - 启动时就检查必需的钥匙在不在
+        if not self.settings.openai_api_key:
+            raise ValueError("❌ 缺失关键配置: OPENAI_API_KEY")
+
+    def _create_model(self, config: Dict[str, Any]) -> ChatOpenAI:
+        """模型创建工厂方法 - 统一的模型生产流程"""
+        return ChatOpenAI(**config)
+
     @property
     def analyzer_model(self) -> ChatOpenAI:
         """
-        分析模型 (GPT-4o)
+        分析模型 (节点专用):专注逻辑、提取、工具调用
         
-        用途：处理复杂的财务分析、数据解读、负面信号检测等高级任务
-        特点：推理能力强、准确度高
+        温度设为 0.0 是因为金融数据分析不能有随机性,
+        就像银行计算利息必须每次结果一样,不能今天算出来是 100 明天就变成 101
         """
-        if self._analyzer_model is None:
-            self._analyzer_model = ChatOpenAI(
-                model="gpt-4o",
-                api_key=self.openai_api_key,
-                temperature=0.2,  # 较低温度，保证分析结果的一致性和准确性
-                max_tokens=4096,
-                model_kwargs={
-                    "top_p": 0.9,
-                }
-            )
-        return self._analyzer_model
-    
+        if "analyzer" not in self._models:
+            self._models["analyzer"] = self._create_model({
+                "model": self.settings.analyzer_model_name,
+                "api_key": self.settings.openai_api_key,
+                "temperature": 0.0,  # 分析任务必须用 0 保证稳定性
+                "max_tokens": 4096,
+                "model_kwargs": {"seed": 42},  # 进一步确保金融意图提取的一致性
+            })
+        return self._models["analyzer"]
+
     @property
     def chat_model(self) -> ChatOpenAI:
         """
-        对话模型 (DeepSeek 或 GPT-4o-mini)
+        对话模型 (节点专用):专注自然语言回复、总结
         
-        用途：处理用户对话、问答、格式化输出等轻量级任务
-        特点：响应快速、成本低
+        支持 DeepSeek 优先逻辑,如果有 DeepSeek 的钥匙就用它,
+        没有就降级到 GPT-4o-mini(像外卖优先顺丰,没有就用邮政)
         """
-        if self._chat_model is None:
-            # 优先使用 DeepSeek，如果没有配置则使用 GPT-4o-mini
-            if self.deepseek_api_key:
-                self._chat_model = ChatOpenAI(
-                    model="deepseek-chat",
-                    api_key=self.deepseek_api_key,
-                    base_url="https://api.deepseek.com",
-                    temperature=0.7,  # 对话需要更自然，温度略高
-                    max_tokens=2048,
-                )
+        if "chat" not in self._models:
+            # 逻辑:如果有 DeepSeek Key,尝试构建 DeepSeek
+            if self.settings.deepseek_api_key:
+                config = {
+                    "model": self.settings.chat_model_name,
+                    "api_key": self.settings.deepseek_api_key,
+                    "base_url": "https://api.deepseek.com",
+                    "temperature": 0.7,
+                    "max_tokens": 2048,
+                }
             else:
-                self._chat_model = ChatOpenAI(
-                    model="gpt-4o-mini",
-                    api_key=self.openai_api_key,
-                    temperature=0.7,
-                    max_tokens=2048,
-                )
-        return self._chat_model
-    
-    def get_custom_model(
-        self, 
-        model_name: str, 
-        temperature: float = 0.7,
-        max_tokens: int = 2048,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None
-    ) -> ChatOpenAI:
-        """
-        获取自定义配置的模型
-        
-        Args:
-            model_name: 模型名称
-            temperature: 温度参数 (0-1)
-            max_tokens: 最大令牌数
-            api_key: API密钥（可选，默认使用 OpenAI）
-            base_url: API基础URL（可选）
-        
-        Returns:
-            配置好的模型实例
-        """
-        config = {
-            "model": model_name,
-            "api_key": api_key or self.openai_api_key,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
-        
-        if base_url:
-            config["base_url"] = base_url
-        
-        return ChatOpenAI(**config)
+                config = {
+                    "model": self.settings.fallback_model_name,
+                    "api_key": self.settings.openai_api_key,
+                    "temperature": 0.7,
+                    "max_tokens": 2048,
+                }
+            
+            self._models["chat"] = self._create_model(config)
+        return self._models["chat"]
 
 
-# 全局单例实例
-_model_manager: Optional[ModelManager] = None
+# --- 全局快捷访问 ---
+
+_manager: Optional[ModelManager] = None
 
 
-def get_model_manager() -> ModelManager:
+def get_manager() -> ModelManager:
+    """获取全局模型管理器(单例模式)"""
+    global _manager
+    if _manager is None:
+        _manager = ModelManager()
+    return _manager
+
+
+def get_model(role: str = "chat") -> ChatOpenAI:
     """
-    获取全局模型管理器实例（单例模式）
+    根据角色获取模型 - 节点只需要说"我要一个分析模型"就行,不用管底层是什么
     
-    Returns:
-        ModelManager: 模型管理器实例
+    用法: get_model("analyzer") 或 get_model("chat")
+    
+    这就像你去餐厅点菜,只需要说"来份宫保鸡丁",
+    不用管厨师用的是鲁花油还是金龙鱼油
     """
-    global _model_manager
-    if _model_manager is None:
-        _model_manager = ModelManager()
-    return _model_manager
+    manager = get_manager()
+    if role == "analyzer":
+        return manager.analyzer_model
+    return manager.chat_model
 
 
-# 快捷访问函数
+# 保留旧的快捷访问函数,保证向后兼容
 def get_analyzer_model() -> ChatOpenAI:
-    """获取分析模型（用于财务分析等复杂任务）"""
-    return get_model_manager().analyzer_model
+    """获取分析模型(用于财务分析等复杂任务)"""
+    return get_model("analyzer")
 
 
 def get_chat_model() -> ChatOpenAI:
-    """获取对话模型（用于用户交互等轻量任务）"""
-    return get_model_manager().chat_model
+    """获取对话模型(用于用户交互等轻量任务)"""
+    return get_model("chat")
