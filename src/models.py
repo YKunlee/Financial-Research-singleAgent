@@ -17,14 +17,30 @@ from pydantic import BaseModel, Field
 
 # 配置管理 - 集中管理参数
 class ModelSettings(BaseModel):
-    """模型基础配置 - 像身份证一样集中存储所有 API 钥匙和默认设置"""
-    openai_api_key: str = Field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
-    deepseek_api_key: str = Field(default_factory=lambda: os.getenv("DEEPSEEK_API_KEY", ""))
-    
-    # 默认参数
-    analyzer_model_name: str = "gpt-4o-mini"
-    chat_model_name: str = "deepseek-chat"
-    fallback_model_name: str = "gpt-4o-mini"
+    """模型基础配置 - 像身份证一样集中存储所有模型名
+
+    前端负责告诉我“现在用哪个模型名字”,
+    我再根据这个名字去环境变量里翻对应的 Key。
+    """
+
+    # 单一默认模型名称:
+    # - 想换模型时,只需要改这里或通过前端传参覆盖
+    # - 例如前端传入 "gpt-4o-mini" / "deepseek-chat"
+    model_name: str = "gpt-4o-mini"
+
+    def get_api_key(self) -> str:
+        """根据当前模型名去环境变量里查找对应的 Key。
+
+        约定:
+        - 模型名: gpt-4o-mini  -> 环境变量: GPT_4O_MINI_API_KEY
+        - 模型名: deepseek-chat -> 环境变量: DEEPSEEK_CHAT_API_KEY
+
+        这样前端只需要传模型名,后端按约定拼出变量名去 .env 里找即可。
+        """
+        # 把模型名转换成环境变量风格: 小写/横杠 -> 大写/下划线
+        normalized = self.model_name.replace("-", "_").upper()
+        env_var = f"{normalized}_API_KEY"
+        return os.getenv(env_var, "")
 
 
 class ModelManager:
@@ -34,9 +50,11 @@ class ModelManager:
         self.settings = ModelSettings()
         self._models: Dict[str, ChatOpenAI] = {}
         
-        # 预校验 - 启动时就检查必需的钥匙在不在
-        if not self.settings.openai_api_key:
-            raise ValueError("❌ 缺失关键配置: OPENAI_API_KEY")
+        # 预校验 - 启动时就检查当前模型对应的 Key 在不在
+        if not self.settings.get_api_key():
+            raise ValueError(
+                f"❌ 缺失模型 {self.settings.model_name} 的 API Key 环境变量,请在 .env 中配置对应的 *_API_KEY"
+            )
 
     def _create_model(self, config: Dict[str, Any]) -> ChatOpenAI:
         """模型创建工厂方法 - 统一的模型生产流程"""
@@ -52,8 +70,8 @@ class ModelManager:
         """
         if "analyzer" not in self._models:
             self._models["analyzer"] = self._create_model({
-                "model": self.settings.analyzer_model_name,
-                "api_key": self.settings.openai_api_key,
+                "model": self.settings.model_name,
+                "api_key": self.settings.get_api_key(),
                 "temperature": 0.0,  # 分析任务必须用 0 保证稳定性
                 "max_tokens": 4096,
                 "model_kwargs": {"seed": 42},  # 进一步确保金融意图提取的一致性
@@ -65,28 +83,16 @@ class ModelManager:
         """
         对话模型 (节点专用):专注自然语言回复、总结
         
-        支持 DeepSeek 优先逻辑,如果有 DeepSeek 的钥匙就用它,
-        没有就降级到 GPT-4o-mini(像外卖优先顺丰,没有就用邮政)
+        这里与 analyzer_model 共用同一个底层模型名称,只是温度和用途不同;
+        多模型选择(例如“DeepSeek / GPT-4o-mini”)交给前端控制。
         """
         if "chat" not in self._models:
-            # 逻辑:如果有 DeepSeek Key,尝试构建 DeepSeek
-            if self.settings.deepseek_api_key:
-                config = {
-                    "model": self.settings.chat_model_name,
-                    "api_key": self.settings.deepseek_api_key,
-                    "base_url": "https://api.deepseek.com",
-                    "temperature": 0.7,
-                    "max_tokens": 2048,
-                }
-            else:
-                config = {
-                    "model": self.settings.fallback_model_name,
-                    "api_key": self.settings.openai_api_key,
-                    "temperature": 0.7,
-                    "max_tokens": 2048,
-                }
-            
-            self._models["chat"] = self._create_model(config)
+            self._models["chat"] = self._create_model({
+                "model": self.settings.model_name,
+                "api_key": self.settings.get_api_key(),
+                "temperature": 0.7,
+                "max_tokens": 2048,
+            })
         return self._models["chat"]
 
 
@@ -108,9 +114,6 @@ def get_model(role: str = "chat") -> ChatOpenAI:
     根据角色获取模型 - 节点只需要说"我要一个分析模型"就行,不用管底层是什么
     
     用法: get_model("analyzer") 或 get_model("chat")
-    
-    这就像你去餐厅点菜,只需要说"来份宫保鸡丁",
-    不用管厨师用的是鲁花油还是金龙鱼油
     """
     manager = get_manager()
     if role == "analyzer":
