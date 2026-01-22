@@ -4,7 +4,9 @@ Financial Research Agent automates equity research by collecting market data, fi
 金融研究智能体通过收集特定公司或行业的市场数据、财务报表、监管披露与新闻，自动化完成股票研究。它会总结收入、盈利能力、业绩指引、风险与管理层口径，并标记负面信号，以支持结构化的投资决策。
 
 ## Project Structure / 项目结构
-finance-agent-pro/
+
+```
+Financial-Research-multiAgent/
 ├── main.py                 # FastAPI entry / FastAPI 入口
 ├── .env                    # Environment variables / 环境变量
 ├── src/
@@ -30,6 +32,7 @@ finance-agent-pro/
     │   └── chatgpt.css
     └── js/
         └── chat.js
+```
 
 ## Tech Stack / 用到的技术
 - LangGraph: Graph orchestration, parallel fan-out/fan-in, and state passing / 负责 StateGraph 编排、并行 Fan-out/Fan-in 与状态传递
