@@ -10,6 +10,7 @@ Financial-Research-multiAgent/
 ├── main.py                 # FastAPI entry / FastAPI 入口
 ├── .env                    # Environment variables / 环境变量
 ├── src/
+│   ├── models.py           # Multi-model manager / 多模型配置管理
 │   ├── state.py            # LangGraph State schema / LangGraph State 结构
 │   ├── graph.py            # Graph wiring & routing / LangGraph 编排与路由
 │   ├── nodes/              # Agent logic nodes / Agent 逻辑节点
@@ -35,7 +36,10 @@ Financial-Research-multiAgent/
 ```
 
 ## Tech Stack / 用到的技术
-- LangGraph: Graph orchestration, parallel fan-out/fan-in, and state passing / 负责 StateGraph 编排、并行 Fan-out/Fan-in 与状态传递
-- FastAPI: Web server entry and API layer / Web 服务入口与接口层
-- LLM: Intent and entity extraction via prompts / 意图识别与实体抽取（通过 prompts 配置）
-- Template + Static: UI rendering and basic interactions / 前端卡片展示与基础交互
+- **LangGraph**: Graph orchestration, parallel fan-out/fan-in, and state passing / 负责 StateGraph 编排、并行 Fan-out/Fan-in 与状态传递
+- **FastAPI**: Web server entry and API layer / Web 服务入口与接口层
+- **Multi-Model Manager**: Unified LLM configuration management / 统一管理多模型配置
+  - GPT-4o: Complex financial analysis / 复杂财务分析
+  - DeepSeek/GPT-4o-mini: User chat & light tasks / 用户对话与轻量任务
+- **LLM**: Intent and entity extraction via prompts / 意图识别与实体抽取（通过 prompts 配置）
+- **Template + Static**: UI rendering and basic interactions / 前端卡片展示与基础交互
