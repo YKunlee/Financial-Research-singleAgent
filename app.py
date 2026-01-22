@@ -56,8 +56,14 @@ async def on_message(message: cl.Message):
         # 初始化状态
         initial_state = make_initial_state(user_query)
         
+        # 调试日志：打印初始状态关键信息
+        print('\n' + '=' * 80)
+        print('[DEBUG] 收到用户查询:', user_query)
+        print('[DEBUG] 初始状态:', {k: initial_state.get(k) for k in ['user_query', 'company_name', 'intent', 'need_financial', 'need_listing']})
+        print('=' * 80)
+        
         # 执行 LangGraph 工作流（流式处理）
-        result_state = None
+        result_state = {}
         step_count = 0
         
         async for event in graph_app.astream(initial_state, stream_mode="updates"):
@@ -71,8 +77,20 @@ async def on_message(message: cl.Message):
                     latest_trace = trace[-1] if isinstance(trace, list) else str(trace)
                     await processing_msg.stream_token(f"✓ {node_name}: {latest_trace}\n")
                 
-                # 保存最新状态
-                result_state = node_output
+                # 调试日志：打印每个节点的关键输出
+                if isinstance(node_output, dict):
+                    debug_keys = ['company_name', 'intent', 'need_financial', 'need_listing', 'financial_data', 'listing_data', 'card_json', 'errors']
+                    print('[DEBUG] step =', step_count, 'node =', node_name)
+                    print('[DEBUG] 节点输出片段:', {k: node_output.get(k) for k in debug_keys if k in node_output})
+                
+                    # 合并当前节点的状态更新到总状态中
+                    # 对于列表类字段（如 errors / trace），LangGraph 已在内部负责合并
+                    # 这里简单覆盖即可，保留其他节点写入的字段
+                    result_state.update(node_output)
+        
+        # 调试日志：打印最终聚合状态
+        print('[DEBUG] 最终 result_state 关键信息:', {k: result_state.get(k) for k in ['company_name', 'intent', 'need_financial', 'need_listing', 'financial_data', 'listing_data', 'card_json', 'errors']})
+        print('=' * 80 + '\n')
         
         # 结束处理状态消息
         await processing_msg.update()

@@ -37,7 +37,7 @@ class ModelSettings(BaseModel):
 
     # 单一默认模型名称:
     # - 想换模型时,只需要改这里或通过前端传参覆盖
-    # - 例如前端传入 "gpt-4o-mini" / "deepseek-chat"
+    # - 例如前端传入 "gpt-4o-mini" / "deepseek-chat" / "gpt-3.5-turbo"
     model_name: str = "gpt-4o-mini"
 
     def get_api_key(self) -> str:
@@ -70,6 +70,11 @@ class ModelManager:
 
     def _create_model(self, config: Dict[str, Any]) -> ChatOpenAI:
         """模型创建工厂方法 - 统一的模型生产流程"""
+        # 如果是 DeepSeek，需要加上 base_url
+        if "deepseek" in self.settings.model_name.lower():
+            config["base_url"] = "https://api.deepseek.com"
+        # 如果需要代理（临时测试用，生产环境应通过环境变量配置）
+        # config["http_client"] = httpx.Client(proxies="http://127.0.0.1:7890")
         return ChatOpenAI(**config)
 
     @property
