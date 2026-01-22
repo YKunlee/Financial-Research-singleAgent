@@ -10,9 +10,21 @@
 """
 
 import os
+from pathlib import Path
 from typing import Optional, Dict, Any
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
+
+# 加载 .env 文件中的环境变量
+try:
+    from dotenv import load_dotenv
+    # 查找项目根目录的 .env 文件
+    env_path = Path(__file__).parent.parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+except ImportError:
+    # 如果没有安装 python-dotenv，使用系统环境变量
+    pass
 
 
 # 配置管理 - 集中管理参数

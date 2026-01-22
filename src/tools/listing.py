@@ -45,15 +45,16 @@ LOCAL_LISTING_DATA: Dict[str, ListingData] = {
 }
 
 
-def listing_tool(state: State) -> State:
+def listing_tool(state: State) -> dict:
     # 输入：state.company_name
-    # 输出：state.listing_data + state.parallel_done.listing
+    # 输出：只返回本工具修改的字段（避免并发冲突）
     company = state.get("company_name")
     if not company:
         # 缺少公司名时不抛异常，写入 errors 并标记并行任务完成，避免汇聚节点一直等待。
-        state["errors"].append("listing_tool: company_name missing")
-        state["parallel_done"]["listing"] = True
-        return state
+        return {
+            "errors": ["listing_tool: company_name missing"],
+            "parallel_done": {"financial": False, "listing": True}
+        }
 
     # 步骤1：取数（当前为本地 mock；未来可替换为 API/DB）
     data = LOCAL_LISTING_DATA.get(
@@ -66,13 +67,15 @@ def listing_tool(state: State) -> State:
         },
     )
     # 步骤2：解析为统一字段（listed_date/listing_status/board/source）
-    # 步骤3：写回 state（只写本工具负责的字段，降低耦合）
-    state["listing_data"] = dict(data)
+    # 步骤3：只返回本工具负责的字段，降低耦合
 
     # 动作：打印上市日期（便于在 CLI / 日志中直接看到结果）
     print(f"{company} listed date: {data['listed_date']}")
 
-    # 步骤4：标记并行任务完成，供 formatter/fan-in 判断
-    state["parallel_done"]["listing"] = True
-    state["trace"].append("listing_tool done")
-    return state
+    # 步骤4：返回修改的字段（不返回整个 state）
+    # 注意：parallel_done 只标记自己的任务完成，另一个字段保持原值
+    return {
+        "listing_data": dict(data),
+        "parallel_done": {"financial": False, "listing": True},
+        "trace": ["listing_tool done"]
+    }

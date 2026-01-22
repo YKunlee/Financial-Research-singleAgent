@@ -12,11 +12,14 @@ LangGraph 状态契约与字段定义。
 - 各节点只读写与自己相关的字段，降低耦合与竞态风险。
 - parallel_done 用于并行汇聚判断，确保 formatter 只在必要数据齐备时产出。
 - errors 与 trace 用于错误显性暴露与执行追踪，便于排障与审计。
+- 使用 Annotated + operator.add 支持并行节点安全地向列表追加数据。
+- 使用自定义 merge_parallel_done 函数支持 parallel_done 的并发更新。
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional, TypedDict, cast
+import operator
+from typing import Annotated, Any, Dict, List, Literal, Optional, TypedDict, cast
 
 IntentType = Literal["financial", "listing", "chat"]
 
@@ -39,6 +42,21 @@ class ParallelDone(TypedDict):
     listing: bool
 
 
+def merge_parallel_done(left: ParallelDone, right: ParallelDone) -> ParallelDone:
+    """
+    并行完成状态合并函数
+    
+    当两个并行节点同时更新 parallel_done 时，
+    LangGraph 会调用此函数合并它们的更新。
+    
+    策略：两边的字段都保留，True 优先（一旦某个任务完成就标记为 True）
+    """
+    return {
+        "financial": left.get("financial", False) or right.get("financial", False),
+        "listing": left.get("listing", False) or right.get("listing", False),
+    }
+
+
 class State(TypedDict):
     # 用户输入
     user_query: str
@@ -56,10 +74,10 @@ class State(TypedDict):
     chat_reply: Optional[str]
     # 前端卡片输出
     card_json: Optional[Dict[str, Any]]
-    # 控制与诊断
-    errors: List[str]
-    trace: List[str]
-    parallel_done: ParallelDone
+    # 控制与诊断（使用 Annotated 支持并发追加）
+    errors: Annotated[List[str], operator.add]
+    trace: Annotated[List[str], operator.add]
+    parallel_done: Annotated[ParallelDone, merge_parallel_done]
 
 
 def make_initial_state(user_query: str) -> State:
