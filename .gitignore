@@ -211,3 +211,10 @@ backup_old_frontend/
 
 # Chainlit runtime files (运行时生成的文件)
 .files/
+
+# SQLite database files (对话历史数据库)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+chainlit_data.db*

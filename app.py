@@ -11,6 +11,7 @@ Chainlit 集成入口 - 金融研究 Agent
 import chainlit as cl
 from pathlib import Path
 import sys
+from datetime import datetime
 
 # 确保可以导入 src 模块
 project_root = Path(__file__).parent
@@ -18,18 +19,191 @@ sys.path.insert(0, str(project_root))
 
 from src.graph import app as graph_app
 from src.state import make_initial_state
+from src.data_layer import SQLiteDataLayer  # 使用 SQLite 持久化存储
+
+
+# ==================== 数据层初始化 ====================
+# 创建SQLite数据层实例，对话历史持久化存储到数据库
+# 数据库文件位置：项目根目录下的 chainlit_data.db
+data_layer = SQLiteDataLayer(db_path="chainlit_data.db")
+
+
+@cl.data_layer
+def get_data_layer():
+    """
+    返回数据层实例
+    
+    Chainlit 会调用这个函数来获取数据层，
+    用于管理会话历史和消息存储
+    """
+    return data_layer
+
+
+# ==================== 认证配置 ====================
+# Chainlit 需要认证才能显示侧边栏的会话历史
+# 这里使用简单的密码认证，适合开发测试
+
+@cl.password_auth_callback
+async def auth_callback(username: str, password: str):
+    """
+    密码认证回调
+    
+    白话解释：
+    就像登录微信一样，输入用户名密码后才能看到自己的聊天记录
+    
+    测试账号：
+    - 用户名: admin
+    - 密码: admin
+    
+    也可以直接输入任意用户名，密码留空（方便测试）
+    """
+    user_obj = None
+    
+    # 方式1：管理员账号
+    if username == "admin" and password == "admin":
+        user_obj = cl.User(
+            identifier="admin",
+            metadata={"role": "admin", "provider": "credentials"}
+        )
+    # 方式2：任意用户名，无需密码（方便快速测试）
+    # 只要输入用户名就能登录，密码可以为空
+    elif username and len(username) > 0:
+        user_obj = cl.User(
+            identifier=username,
+            metadata={"role": "user", "provider": "credentials"}
+        )
+    
+    # 如果认证成功，将用户保存到数据层
+    if user_obj:
+        print(f"[auth_callback] 认证成功，用户: {user_obj.identifier}")
+        # 创建用户记录
+        await data_layer.create_user(user_obj)
+        return user_obj
+    
+    # 认证失败
+    print(f"[auth_callback] 认证失败，用户名: {username}")
+    return None
 
 
 @cl.on_chat_start
 async def on_chat_start():
     """
-    会话开始时的欢迎消息
+    新会话开始时的欢迎消息
+    
+    场景：用户点击"新建对话"或刷新页面时触发
+    
+    白话解释：
+    Chainlit 每次刷新都会生成新的 thread_id（这是框架设计）
+    我们的策略：
+    1. 先清理该用户的空会话（拿了号但没点单的）
+    2. 再创建新会话（因为 Chainlit 已经给了新号码牌）
     """
     # 初始化会话历史存储
     cl.user_session.set("history", [])
     
+    # ==================== 获取会话信息 ====================
+    thread_id = cl.context.session.thread_id
+    user = cl.context.session.user
+    user_id = user.identifier if user else "anonymous"
+    
+    print(f"\n{'='*60}")
+    print(f"[on_chat_start] 触发会话启动")
+    print(f"[on_chat_start] thread_id={thread_id}")
+    print(f"[on_chat_start] user_id={user_id}")
+    
+    # ==================== 清理该用户的空会话/无效会话 ====================
+    # 白话：把这个用户之前"拿了号但没好好点单"的废账单删掉
+    # 策略：删除消息数 <= 2 的会话（可能只有欢迎消息，或只有1轮简单测试对话）
+    conn = data_layer._get_connection()
+    cursor = conn.cursor()
+    
+    # 查找该用户的所有低价值会话（消息数 <= 2）
+    cursor.execute("""
+        SELECT t.id, t.name, COUNT(s.id) as msg_count
+        FROM threads t
+        LEFT JOIN steps s ON t.id = s.thread_id
+        WHERE t.user_id = ?
+        GROUP BY t.id
+        HAVING msg_count <= 2
+    """, (user_id,))
+    
+    low_value_threads = cursor.fetchall()
+    if low_value_threads:
+        print(f"[on_chat_start] 发现 {len(low_value_threads)} 个无效会话（消息数≤2），开始清理...")
+        for thread_item in low_value_threads:
+            # 删除会话及其消息
+            cursor.execute("DELETE FROM threads WHERE id = ?", (thread_item['id'],))
+            cursor.execute("DELETE FROM steps WHERE thread_id = ?", (thread_item['id'],))
+            print(f"  ✓ 删除会话: {thread_item['name']} (消息数: {thread_item['msg_count']})")
+        conn.commit()
+        print(f"[on_chat_start] ✓ 已清理 {len(low_value_threads)} 个无效会话")
+    
+    conn.close()
+    
+    # ==================== 创建新会话 ====================
+    # 由于 Chainlit 已经分配了新的 thread_id，直接创建即可
+    print(f"[on_chat_start] 创建新会话...")
+    await data_layer.create_thread({
+        "id": thread_id,
+        "name": "New Chat",
+        "userId": user_id,
+        "createdAt": None,
+        "metadata": {},
+        "tags": []
+    })
+    print(f"[on_chat_start] ✓ 新会话创建成功")
+    print(f"{'='*60}\n")
+    
+    # 发送欢迎消息
     await cl.Message(
         content="👋 你好！我是金融研究助手。\n\n你可以：\n- 询问公司的财务数据（如：腾讯的市值是多少？）\n- 查询上市信息（如：小米什么时候上市的？）\n- 日常对话（如：你好）\n\n请直接输入公司名或问题即可开始。"
+    ).send()
+
+
+@cl.on_chat_resume
+async def on_chat_resume(thread: dict):
+    """
+    恢复旧会话时的处理
+    
+    场景：用户从侧边栏点击某个历史会话时触发
+    
+    功能：
+    1. 加载该会话的历史消息
+    2. 重新构建会话上下文
+    3. 展示欢迎消息
+    
+    白话解释：
+    就像翻开一本旧笔记本，把之前写的内容重新加载进来
+    """
+    thread_id = thread.get("id")
+    thread_name = thread.get("name", "未命名会话")
+    
+    print(f"\n[on_chat_resume] 恢复会话: {thread_id}, 名称: {thread_name}")
+    
+    # 从数据层获取历史消息
+    history_steps = data_layer.get_thread_messages(thread_id)
+    
+    # 重建会话历史（转换为标准格式）
+    history = []
+    for step in history_steps:
+        step_type = step.get("type", "")
+        step_name = step.get("name", "")
+        step_output = step.get("output", "")
+        
+        # 只提取用户消息和助手回复
+        if step_type == "user_message":
+            history.append({"role": "user", "content": step_output})
+        elif step_type == "assistant_message" or step_name == "assistant":
+            history.append({"role": "assistant", "content": step_output})
+    
+    # 保存到当前会话
+    cl.user_session.set("history", history)
+    
+    print(f"[on_chat_resume] 已加载 {len(history)} 条历史消息")
+    
+    # 发送欢迎消息
+    await cl.Message(
+        content=f"📂 已恢复会话：**{thread_name}**\n\n历史消息已加载，你可以继续提问。"
     ).send()
 
 
@@ -163,6 +337,49 @@ async def on_message(message: cl.Message):
         history.append({"role": "user", "content": user_query})
         history.append({"role": "assistant", "content": ai_reply_content})
         cl.user_session.set("history", history)
+        
+        # ==================== 关键修复：保存消息到数据层 ====================
+        # 获取当前会话 ID
+        thread_id = cl.context.session.thread_id
+        
+        # 保存用户消息
+        await data_layer.create_step({
+            "id": f"{thread_id}_user_{len(history)}",
+            "threadId": thread_id,
+            "type": "user_message",
+            "name": "user",
+            "output": user_query,
+            "createdAt": datetime.now().isoformat()
+        })
+        
+        # 保存 AI 回复
+        await data_layer.create_step({
+            "id": f"{thread_id}_assistant_{len(history)}",
+            "threadId": thread_id,
+            "type": "assistant_message",
+            "name": "assistant",
+            "output": ai_reply_content,
+            "createdAt": datetime.now().isoformat()
+        })
+        
+        # ==================== 智能更新会话名称 ====================
+        # 如果是第一条消息（会话刚创建），根据用户查询自动生成会话名称
+        if len(history) == 2:  # 第一轮对话（1条用户消息 + 1条AI回复）
+            # 使用英文格式避免中文编码问题
+            company_name = result_state.get("company_name", "")
+            if company_name and company_name != "未知":
+                # 使用拼音或英文，避免中文
+                thread_name = f"Query: {company_name}"
+            else:
+                # 截取用户查询的前30个字符
+                query_preview = user_query[:30].replace("\n", " ")
+                thread_name = f"Chat: {query_preview}" + ("..." if len(user_query) > 30 else "")
+            
+            print(f"\n[on_message] 更新会话名称: '{thread_name}'")
+            await data_layer.update_thread(thread_id, name=thread_name)
+            print(f"[on_message] ✓ 会话名称已更新\n")
+        
+        print(f"[on_message] ✓ 消息已保存到数据层，会话ID: {thread_id}")
     
     except Exception as e:
         # 错误处理
