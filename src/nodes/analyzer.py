@@ -182,7 +182,14 @@ def analyzer_node(state: State) -> State:
     except Exception as e:
         # 错误处理：记录错误并降级为 chat 模式
         error_msg = f"analyzer 节点错误: {str(e)}"
-        state["errors"].append(error_msg)
+        
+        # 打印详细日志用于诊断
+        print(f"[ERROR] {error_msg}")
+        print(f"[ERROR] 异常类型: {type(e).__name__}")
+        
+        # 避免重复添加相同错误
+        if error_msg not in state["errors"]:
+            state["errors"].append(error_msg)
         state["trace"].append(error_msg)
         
         # 降级到安全的默认值

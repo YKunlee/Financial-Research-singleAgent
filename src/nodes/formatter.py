@@ -54,6 +54,15 @@ def generate_chat_reply(state: State) -> str:
     if state.get("chat_reply"):
         return state["chat_reply"]
     
+    # 如果前置节点已经出错,直接返回错误提示,避免再次调用LLM浪费时间
+    errors = state.get("errors", [])
+    if errors:
+        # 提取第一个错误的关键信息
+        first_error = errors[0]
+        if "Request timed out" in first_error or "timeout" in first_error.lower():
+            return "抱歉,网络请求超时了,请检查网络连接或稍后再试。"
+        return f"抱歉,系统遇到了一些问题: {first_error}"
+    
     try:
         # 加载提示词
         system_prompt = load_assistant_prompt()
@@ -66,11 +75,13 @@ def generate_chat_reply(state: State) -> str:
         ]
         
         # 调用模型
+        print(f"[INFO] formatter 调用 LLM 生成对话回复...")
         response = llm.invoke(messages)
         return response.content.strip()
         
     except Exception as e:
         # 降级回复
+        print(f"[ERROR] formatter 生成对话失败: {str(e)}")
         return f"抱歉，我现在无法处理你的请求。（{str(e)}）"
 
 

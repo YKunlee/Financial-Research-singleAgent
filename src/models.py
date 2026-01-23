@@ -73,8 +73,14 @@ class ModelManager:
         # 如果是 DeepSeek，需要加上 base_url
         if "deepseek" in self.settings.model_name.lower():
             config["base_url"] = "https://api.deepseek.com"
-        # 如果需要代理（临时测试用，生产环境应通过环境变量配置）
-        # config["http_client"] = httpx.Client(proxies="http://127.0.0.1:7890")
+        
+        # 网络超时配置 - 防止请求无限等待
+        # request_timeout: 总请求超时时间(秒) - 包括连接+读取+重试
+        config["request_timeout"] = 30  # 30秒总超时
+        
+        # 设置重试策略 - 最多重试1次,避免长时间等待
+        config["max_retries"] = 1
+        
         return ChatOpenAI(**config)
 
     @property
