@@ -74,6 +74,8 @@ class State(TypedDict):
     chat_reply: Optional[str]
     # 前端卡片输出
     card_json: Optional[Dict[str, Any]]
+    # 会话历史记忆（最近5轮对话的消息列表）
+    conversation_history: Annotated[List[Dict[str, str]], operator.add]
     # 控制与诊断（使用 Annotated 支持并发追加）
     errors: Annotated[List[str], operator.add]
     trace: Annotated[List[str], operator.add]
@@ -98,6 +100,7 @@ def make_initial_state(user_query: str) -> State:
         "listing_data": None,
         "chat_reply": None,
         "card_json": None,
+        "conversation_history": [],  # 空列表,后续由 app.py 填充
         "errors": [],
         "trace": [],
         "parallel_done": {"financial": False, "listing": False},

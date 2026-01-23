@@ -29,7 +29,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import yaml
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -55,16 +55,30 @@ def load_analyzer_prompt() -> str:
     return prompt_config.get("content", "").strip()
 
 
-def build_llm_prompt(user_query: str) -> str:
+def build_llm_prompt(user_query: str, history: List[Dict[str, str]] = None) -> str:
     """
     步骤2：构造 LLM 输入
     
     将用户查询与输出结构约束组合成完整的提示词
     要求 LLM 返回 JSON 格式的结构化输出
+    支持传入对话历史以理解指代关系
     """
-    return f"""用户输入：{user_query}
+    # 构造历史上下文部分
+    history_text = ""
+    if history:
+        history_text = "【对话历史】:\n"
+        for msg in history[-10:]:  # 最多取最近10条
+            role = "用户" if msg.get("role") == "user" else "助手"
+            content = msg.get("content", "")
+            # 限制每条历史消息长度，避免过长
+            if len(content) > 200:
+                content = content[:200] + "..."
+            history_text += f"{role}: {content}\n"
+        history_text += "\n"
+    
+    return f"""{history_text}【当前用户输入】:{user_query}
 
-请分析以上输入，提取以下信息并以 JSON 格式返回：
+请分析以上输入（结合对话历史理解指代关系），提取以下信息并以 JSON 格式返回：
 
 {{
   "company_name": "公司名称（如果有）",
@@ -81,11 +95,17 @@ def build_llm_prompt(user_query: str) -> str:
 4. 如果两者都提到，优先设置为 financial，并将两个 need_* 都设为 true
 5. 如果都没提到，intent=chat，两个 need_* 都为 false
 6. confidence 表示你对公司名提取的信心程度
-7. 只返回 JSON，不要其他文字
+7. **如果当前输入使用指代词（如"它"、"该公司"、"这个"），请从对话历史中找到最近提到的公司名**
+8. 只返回 JSON，不要其他文字
 
 示例：
 输入："腾讯的市值是多少"
 输出：{{"company_name":"腾讯","intent":"financial","need_financial":true,"need_listing":false,"confidence":0.95}}
+
+输入（有历史）：
+历史："用户: 腾讯的市值是多少"
+当前："它的市盈率呢"
+输出：{{"company_name":"腾讯","intent":"financial","need_financial":true,"need_listing":false,"confidence":0.90}}
 
 输入："你好"
 输出：{{"company_name":null,"intent":"chat","need_financial":false,"need_listing":false,"confidence":0.0}}"""
@@ -144,16 +164,20 @@ def analyzer_node(state: State) -> State:
     2. 提取公司名、意图类型、置信度
     3. 设置并行任务开关（need_financial、need_listing）
     4. 更新 state 并记录 trace
+    5. 结合会话历史理解指代关系
     
-    输入：state.user_query
+    输入：state.user_query, state.conversation_history
     输出：更新 state 的多个字段
     """
     try:
         # 步骤1：加载提示词
         system_prompt = load_analyzer_prompt()
         
-        # 步骤2：构造 LLM 输入
-        user_prompt = build_llm_prompt(state["user_query"])
+        # 获取会话历史
+        history = state.get("conversation_history", [])
+        
+        # 步骤2：构造 LLM 输入（传入历史）
+        user_prompt = build_llm_prompt(state["user_query"], history)
         
         # 步骤3：调用 LLM
         llm = get_analyzer_model()

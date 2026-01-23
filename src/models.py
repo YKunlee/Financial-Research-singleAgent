@@ -106,7 +106,7 @@ class ModelManager:
         """
         对话模型 (节点专用):专注自然语言回复、总结
         
-        这里与 analyzer_model 共用同一个底层模型名称,只是温度和用途不同;
+        这里与 analyzer_model 共用同一个底层模型名称,只是temperature和用途不同;
         多模型选择(例如“DeepSeek / GPT-4o-mini”)交给前端控制。
         """
         if "chat" not in self._models:

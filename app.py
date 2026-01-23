@@ -25,6 +25,9 @@ async def on_chat_start():
     """
     会话开始时的欢迎消息
     """
+    # 初始化会话历史存储
+    cl.user_session.set("history", [])
+    
     await cl.Message(
         content="👋 你好！我是金融研究助手。\n\n你可以：\n- 询问公司的财务数据（如：腾讯的市值是多少？）\n- 查询上市信息（如：小米什么时候上市的？）\n- 日常对话（如：你好）\n\n请直接输入公司名或问题即可开始。"
     ).send()
@@ -53,13 +56,20 @@ async def on_message(message: cl.Message):
     await processing_msg.send()
     
     try:
+        # 获取会话历史（最近5轮=10条消息）
+        history = cl.user_session.get("history", [])
+        recent_history = history[-10:] if len(history) > 10 else history
+        
         # 初始化状态
         initial_state = make_initial_state(user_query)
+        # 传入历史上下文到 State
+        initial_state["conversation_history"] = recent_history
         
         # 调试日志：打印初始状态关键信息
         print('\n' + '=' * 80)
         print('[DEBUG] 收到用户查询:', user_query)
         print('[DEBUG] 初始状态:', {k: initial_state.get(k) for k in ['user_query', 'company_name', 'intent', 'need_financial', 'need_listing']})
+        print('[DEBUG] 会话历史长度:', len(recent_history))
         print('=' * 80)
         
         # 执行 LangGraph 工作流（流式处理）
@@ -105,9 +115,13 @@ async def on_message(message: cl.Message):
         card_json = result_state.get("card_json", {})
         errors = result_state.get("errors", [])
         
+        # 提取 AI 回复内容用于历史记录
+        ai_reply_content = ""
+        
         if intent == "chat":
             # 对话模式：直接返回文本
             chat_reply = result_state.get("chat_reply", "抱歉，我无法理解你的问题。")
+            ai_reply_content = chat_reply
             await cl.Message(content=chat_reply).send()
         
         else:
@@ -139,8 +153,16 @@ async def on_message(message: cl.Message):
                 for error in errors:
                     output_lines.append(f"- {error}")
             
+            # 记录 AI 回复内容
+            ai_reply_content = "\n".join(output_lines)
+            
             # 发送格式化后的结果
-            await cl.Message(content="\n".join(output_lines)).send()
+            await cl.Message(content=ai_reply_content).send()
+        
+        # 更新会话历史（在流程结束后）
+        history.append({"role": "user", "content": user_query})
+        history.append({"role": "assistant", "content": ai_reply_content})
+        cl.user_session.set("history", history)
     
     except Exception as e:
         # 错误处理
