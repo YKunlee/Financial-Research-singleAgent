@@ -455,9 +455,12 @@ class SQLiteDataLayer(BaseDataLayer):
     
     async def get_thread(self, thread_id: str) -> Optional[ThreadDict]:
         """
-        获取指定会话
+        获取指定会话（包含历史消息）
         
         场景：用户点击某个历史会话时调用
+        
+        重要：返回的 ThreadDict 必须包含 steps 字段，
+        Chainlit 框架才能正确显示历史消息
         """
         conn = self._get_connection()
         cursor = conn.cursor()
@@ -469,9 +472,32 @@ class SQLiteDataLayer(BaseDataLayer):
         """, (thread_id,))
         
         row = cursor.fetchone()
-        conn.close()
         
         if row:
+            # 获取该会话的所有消息
+            cursor.execute("""
+                SELECT id, thread_id, type, name, output, created_at, metadata
+                FROM steps
+                WHERE thread_id = ?
+                ORDER BY created_at ASC
+            """, (thread_id,))
+            step_rows = cursor.fetchall()
+            
+            # 构建 steps 列表，转换为 Chainlit 期望的格式
+            steps = []
+            for step_row in step_rows:
+                steps.append({
+                    "id": step_row["id"],
+                    "threadId": step_row["thread_id"],
+                    "type": step_row["type"],
+                    "name": step_row["name"],
+                    "output": step_row["output"],
+                    "createdAt": step_row["created_at"],
+                    "metadata": json.loads(step_row["metadata"]) if step_row["metadata"] else {}
+                })
+            
+            conn.close()
+            
             thread = {
                 "id": row["id"],
                 "name": row["name"],
@@ -479,11 +505,13 @@ class SQLiteDataLayer(BaseDataLayer):
                 "userIdentifier": row["user_identifier"],
                 "createdAt": row["created_at"],
                 "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
-                "tags": json.loads(row["tags"]) if row["tags"] else []
+                "tags": json.loads(row["tags"]) if row["tags"] else [],
+                "steps": steps  # 包含历史消息，Chainlit 会自动渲染
             }
-            print(f"[SQLiteDataLayer] 获取会话: {thread_id}")
+            print(f"[SQLiteDataLayer] 获取会话: {thread_id}，包含 {len(steps)} 条消息")
             return thread
         
+        conn.close()
         return None
     
     async def update_thread(
@@ -638,9 +666,11 @@ class SQLiteDataLayer(BaseDataLayer):
     
     async def create_step(self, step_dict: Dict[str, Any]):
         """
-        保存消息
+        保存消息（带去重检查）
         
         场景：用户发送消息或 AI 回复时调用
+        
+        去重逻辑：通过 INSERT OR IGNORE 避免保存重复消息
         """
         thread_id = step_dict.get("threadId")
         step_id = step_dict.get("id") or str(uuid.uuid4())
@@ -652,8 +682,9 @@ class SQLiteDataLayer(BaseDataLayer):
         conn = self._get_connection()
         cursor = conn.cursor()
         
+        # 使用 INSERT OR IGNORE 避免重复插入（基于主键 id 去重）
         cursor.execute("""
-            INSERT INTO steps (id, thread_id, type, name, output, created_at, metadata)
+            INSERT OR IGNORE INTO steps (id, thread_id, type, name, output, created_at, metadata)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (
             step_id,

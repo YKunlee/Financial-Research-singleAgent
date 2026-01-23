@@ -200,11 +200,6 @@ async def on_chat_resume(thread: dict):
     cl.user_session.set("history", history)
     
     print(f"[on_chat_resume] 已加载 {len(history)} 条历史消息")
-    
-    # 发送欢迎消息
-    await cl.Message(
-        content=f"📂 已恢复会话：**{thread_name}**\n\n历史消息已加载，你可以继续提问。"
-    ).send()
 
 
 @cl.on_message
@@ -338,8 +333,7 @@ async def on_message(message: cl.Message):
         history.append({"role": "assistant", "content": ai_reply_content})
         cl.user_session.set("history", history)
         
-        # ==================== 关键修复：保存消息到数据层 ====================
-        # 获取当前会话 ID
+        # ==================== 保存消息到数据层 ====================
         thread_id = cl.context.session.thread_id
         
         # 保存用户消息
@@ -363,15 +357,17 @@ async def on_message(message: cl.Message):
         })
         
         # ==================== 智能更新会话名称 ====================
-        # 如果是第一条消息（会话刚创建），根据用户查询自动生成会话名称
-        if len(history) == 2:  # 第一轮对话（1条用户消息 + 1条AI回复）
-            # 使用英文格式避免中文编码问题
+        # 获取当前会话信息，如果名称是默认值则更新
+        current_thread = await data_layer.get_thread(thread_id)
+        current_name = current_thread.get("name", "") if current_thread else ""
+        
+        # 只有当会话名称是默认值时才更新
+        if current_name in ["New Chat", "", None]:
             company_name = result_state.get("company_name", "")
             if company_name and company_name != "未知":
-                # 使用拼音或英文，避免中文
                 thread_name = f"Query: {company_name}"
             else:
-                # 截取用户查询的前30个字符
+                # 使用用户第一条查询的前30个字符
                 query_preview = user_query[:30].replace("\n", " ")
                 thread_name = f"Chat: {query_preview}" + ("..." if len(user_query) > 30 else "")
             
