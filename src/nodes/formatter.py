@@ -22,7 +22,7 @@ from pathlib import Path
 import yaml
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from ..models import get_chat_model
+from ..models import get_model
 from ..state import State
 
 
@@ -68,7 +68,7 @@ def generate_chat_reply(state: State) -> str:
         system_prompt = load_assistant_prompt()
         
         # 构造消息
-        llm = get_chat_model()
+        llm = get_model("chat")
         messages = [
             SystemMessage(content=system_prompt),
             HumanMessage(content=state["user_query"])

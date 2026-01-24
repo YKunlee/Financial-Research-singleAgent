@@ -34,7 +34,7 @@ from typing import Any, Dict, List
 import yaml
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from ..models import get_analyzer_model
+from ..models import get_model
 from ..state import State
 
 
@@ -180,7 +180,7 @@ def analyzer_node(state: State) -> State:
         user_prompt = build_llm_prompt(state["user_query"], history)
         
         # 步骤3：调用 LLM
-        llm = get_analyzer_model()
+        llm = get_model("analyzer")
         messages = [
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_prompt)

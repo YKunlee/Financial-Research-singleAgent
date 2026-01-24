@@ -142,14 +142,3 @@ def get_model(role: str = "chat") -> ChatOpenAI:
     if role == "analyzer":
         return manager.analyzer_model
     return manager.chat_model
-
-
-# 保留旧的快捷访问函数,保证向后兼容
-def get_analyzer_model() -> ChatOpenAI:
-    """获取分析模型(用于财务分析等复杂任务)"""
-    return get_model("analyzer")
-
-
-def get_chat_model() -> ChatOpenAI:
-    """获取对话模型(用于用户交互等轻量任务)"""
-    return get_model("chat")
