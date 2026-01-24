@@ -586,9 +586,12 @@ class SQLiteDataLayer(BaseDataLayer):
         获取会话列表
             
         场景:展示侧边栏的历史会话列表
+        
+        重要：只返回当前用户的会话，避免授权失败
         """
         print(f"\n{'='*60}")
         print(f"[SQLiteDataLayer.list_threads] 开始从数据库获取会话列表")
+        print(f"[SQLiteDataLayer.list_threads] filters.userId = {filters.userId if filters else 'None'}")
             
         conn = self._get_connection()
         cursor = conn.cursor()
@@ -600,9 +603,13 @@ class SQLiteDataLayer(BaseDataLayer):
             WHERE 1=1
         """
         params = []
+        count_params = []
             
-        # 根据 filters 添加过滤条件(如果需要)
-        # 这里可以扩展支持按用户筛选等
+        # 按用户过滤（关键：只返回当前用户的会话）
+        if filters and filters.userId:
+            sql += " AND user_id = ?"
+            params.append(filters.userId)
+            count_params.append(filters.userId)
             
         # 排序:按创建时间倒序
         sql += " ORDER BY created_at DESC"
@@ -632,8 +639,11 @@ class SQLiteDataLayer(BaseDataLayer):
             threads.append(thread_data)
             print(f"[list_threads]   - ID: {row['id'][:8]}..., Name: {row['name']}, User: {row['user_id']}")
             
-        # 检查是否有下一页
-        cursor.execute("SELECT COUNT(*) as count FROM threads", ())
+        # 检查是否有下一页（需要与查询条件一致）
+        count_sql = "SELECT COUNT(*) as count FROM threads WHERE 1=1"
+        if filters and filters.userId:
+            count_sql += " AND user_id = ?"
+        cursor.execute(count_sql, count_params)
         total_count = cursor.fetchone()["count"]
         has_next = (offset + first) < total_count
             
