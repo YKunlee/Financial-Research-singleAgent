@@ -485,8 +485,11 @@ class SQLiteDataLayer(BaseDataLayer):
             
             # 构建 steps 列表，转换为 Chainlit 期望的格式
             steps = []
+            # [DEBUG] print(f"\n{'='*60}")
+            # [DEBUG] print(f"[get_thread] 开始加载会话 {thread_id} 的历史消息")
+            # [DEBUG] print(f"[get_thread] 数据库返回 {len(step_rows)} 条消息")
             for step_row in step_rows:
-                steps.append({
+                step_data = {
                     "id": step_row["id"],
                     "threadId": step_row["thread_id"],
                     "type": step_row["type"],
@@ -494,7 +497,12 @@ class SQLiteDataLayer(BaseDataLayer):
                     "output": step_row["output"],
                     "createdAt": step_row["created_at"],
                     "metadata": json.loads(step_row["metadata"]) if step_row["metadata"] else {}
-                })
+                }
+                steps.append(step_data)
+                # [DEBUG] 打印每条消息的详情用于调试
+                # output_preview = step_row["output"][:50] + "..." if len(step_row["output"] or "") > 50 else step_row["output"]
+                # print(f"[get_thread]   [{step_row['type']}] id={step_row['id'][:20]}..., name={step_row['name']}, output={output_preview}")
+            # [DEBUG] print(f"{'='*60}\n")
             
             conn.close()
             
@@ -508,7 +516,7 @@ class SQLiteDataLayer(BaseDataLayer):
                 "tags": json.loads(row["tags"]) if row["tags"] else [],
                 "steps": steps  # 包含历史消息，Chainlit 会自动渲染
             }
-            print(f"[SQLiteDataLayer] 获取会话: {thread_id}，包含 {len(steps)} 条消息")
+            # [DEBUG] print(f"[SQLiteDataLayer] 获取会话: {thread_id}，包含 {len(steps)} 条消息")
             return thread
         
         conn.close()
@@ -589,9 +597,9 @@ class SQLiteDataLayer(BaseDataLayer):
         
         重要：只返回当前用户的会话，避免授权失败
         """
-        print(f"\n{'='*60}")
-        print(f"[SQLiteDataLayer.list_threads] 开始从数据库获取会话列表")
-        print(f"[SQLiteDataLayer.list_threads] filters.userId = {filters.userId if filters else 'None'}")
+        # [DEBUG] print(f"\n{'='*60}")
+        # [DEBUG] print(f"[SQLiteDataLayer.list_threads] 开始从数据库获取会话列表")
+        # [DEBUG] print(f"[SQLiteDataLayer.list_threads] filters.userId = {filters.userId if filters else 'None'}")
             
         conn = self._get_connection()
         cursor = conn.cursor()
@@ -637,7 +645,7 @@ class SQLiteDataLayer(BaseDataLayer):
                 "tags": json.loads(row["tags"]) if row["tags"] else []
             }
             threads.append(thread_data)
-            print(f"[list_threads]   - ID: {row['id'][:8]}..., Name: {row['name']}, User: {row['user_id']}")
+            # [DEBUG] print(f"[list_threads]   - ID: {row['id'][:8]}..., Name: {row['name']}, User: {row['user_id']}")
             
         # 检查是否有下一页（需要与查询条件一致）
         count_sql = "SELECT COUNT(*) as count FROM threads WHERE 1=1"
@@ -649,8 +657,8 @@ class SQLiteDataLayer(BaseDataLayer):
             
         conn.close()
             
-        print(f"[SQLiteDataLayer] ✓ 获取会话列表: {len(threads)} 条，总计: {total_count}")
-        print(f"{'='*60}\n")
+        # [DEBUG] print(f"[SQLiteDataLayer] ✓ 获取会话列表: {len(threads)} 条，总计: {total_count}")
+        # [DEBUG] print(f"{'='*60}\n")
             
         return PaginatedResponse(
             data=threads,
@@ -689,8 +697,48 @@ class SQLiteDataLayer(BaseDataLayer):
             print("[SQLiteDataLayer] ✗ 保存消息失败: 缺少 threadId")
             return
         
+        # 获取消息内容
+        output_content = step_dict.get("output", "")
+        step_type = step_dict.get("type", "")
+        step_name = step_dict.get("name", "")
+        
+        # ==================== 过滤进度消息 ====================
+        # 进度消息的特征：
+        # 1. 内容以 "✓" 开头（如 "✓ analyzer: ..."）
+        # 2. 空内容的消息
+        # 3. type=run 的系统消息
+        # 这些是处理过程中的临时消息，不应该持久化
+        if output_content.strip().startswith("✓"):
+            # [DEBUG] print(f"[SQLiteDataLayer] ⚠️ 检测到进度消息，跳过保存: {output_content[:50]}...")
+            return
+        
+        # 跳过 run 类型的系统消息（如 on_chat_start）
+        if step_type == "run":
+            # [DEBUG] print(f"[SQLiteDataLayer] ⚠️ 检测到 run 类型消息，跳过保存: name={step_name}")
+            return
+        
+        # 跳过空内容消息
+        if not output_content.strip():
+            # [DEBUG] print(f"[SQLiteDataLayer] ⚠️ 检测到空内容消息，跳过保存: type={step_type}, name={step_name}")
+            return
+        
         conn = self._get_connection()
         cursor = conn.cursor()
+        
+        # 先检查是否已存在相同内容的消息（避免重复）
+        cursor.execute("""
+            SELECT id, output FROM steps 
+            WHERE thread_id = ? AND type = ? AND output = ?
+        """, (thread_id, step_type, output_content))
+        existing = cursor.fetchone()
+        
+        if existing:
+            # [DEBUG] print(f"[SQLiteDataLayer] ⚠️ 检测到重复消息，跳过保存！")
+            # [DEBUG] print(f"[SQLiteDataLayer]   已存在的id: {existing['id']}")
+            # [DEBUG] print(f"[SQLiteDataLayer]   尝试保存的id: {step_id}")
+            # [DEBUG] print(f"[SQLiteDataLayer]   内容预览: {output_content[:50]}...")
+            conn.close()
+            return
         
         # 使用 INSERT OR IGNORE 避免重复插入（基于主键 id 去重）
         cursor.execute("""
@@ -699,17 +747,22 @@ class SQLiteDataLayer(BaseDataLayer):
         """, (
             step_id,
             thread_id,
-            step_dict.get("type", ""),
-            step_dict.get("name", ""),
-            step_dict.get("output", ""),
+            step_type,
+            step_name,
+            output_content,
             step_dict.get("createdAt", datetime.utcnow().isoformat()),
             json.dumps(step_dict.get("metadata", {}))
         ))
         
+        rows_affected = cursor.rowcount
         conn.commit()
         conn.close()
         
-        print(f"[SQLiteDataLayer] 保存消息到会话 {thread_id}: {step_dict.get('name')}")
+        # [DEBUG] output_preview = output_content[:50] + "..." if len(output_content) > 50 else output_content
+        # [DEBUG] print(f"[SQLiteDataLayer] 保存消息到会话 {thread_id}: type={step_type}, name={step_name}")
+        # [DEBUG] print(f"[SQLiteDataLayer]   id={step_id}")
+        # [DEBUG] print(f"[SQLiteDataLayer]   内容预览: {output_preview}")
+        # [DEBUG] print(f"[SQLiteDataLayer]   影响行数: {rows_affected}")
     
     async def update_step(self, step_dict: Dict[str, Any]):
         """更新消息（例如流式输出完成后）"""
@@ -800,7 +853,7 @@ class SQLiteDataLayer(BaseDataLayer):
         conn.close()
         
         if row:
-            print(f"[SQLiteDataLayer] ✓ 找到用户: {identifier}")
+            # [DEBUG] print(f"[SQLiteDataLayer] ✓ 找到用户: {identifier}")
             return PersistedUser(
                 id=row["id"],
                 identifier=row["identifier"],
@@ -808,7 +861,7 @@ class SQLiteDataLayer(BaseDataLayer):
                 createdAt=row["created_at"]
             )
         
-        print(f"[SQLiteDataLayer] ✗ 用户不存在: {identifier}")
+        # [DEBUG] print(f"[SQLiteDataLayer] ✗ 用户不存在: {identifier}")
         return None
     
     async def create_user(self, user) -> PersistedUser:
@@ -839,7 +892,7 @@ class SQLiteDataLayer(BaseDataLayer):
         conn.commit()
         conn.close()
         
-        print(f"[SQLiteDataLayer] 创建用户: {identifier}")
+        # [DEBUG] print(f"[SQLiteDataLayer] 创建用户: {identifier}")
         
         return PersistedUser(
             id=identifier,

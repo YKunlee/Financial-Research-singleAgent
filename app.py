@@ -178,10 +178,25 @@ async def on_chat_resume(thread: dict):
     thread_id = thread.get("id")
     thread_name = thread.get("name", "未命名会话")
     
-    print(f"\n[on_chat_resume] 恢复会话: {thread_id}, 名称: {thread_name}")
+    # [DEBUG] print(f"\n{'='*60}")
+    # [DEBUG] print(f"[on_chat_resume] === 恢复会话详细日志 ===")
+    # [DEBUG] print(f"[on_chat_resume] thread_id: {thread_id}")
+    # [DEBUG] print(f"[on_chat_resume] thread_name: {thread_name}")
+    
+    # 检查 thread 对象中是否已包含 steps
+    thread_steps = thread.get("steps", [])
+    # [DEBUG] print(f"[on_chat_resume] thread 对象中的 steps 数量: {len(thread_steps)}")
+    # [DEBUG] if thread_steps:
+    # [DEBUG]     print(f"[on_chat_resume] thread.steps 详情:")
+    # [DEBUG]     for i, step in enumerate(thread_steps):
+    # [DEBUG]         step_type = step.get("type", "")
+    # [DEBUG]         step_name = step.get("name", "")
+    # [DEBUG]         step_output = step.get("output", "")[:50] + "..." if len(step.get("output", "")) > 50 else step.get("output", "")
+    # [DEBUG]         print(f"[on_chat_resume]   [{i}] type={step_type}, name={step_name}, output={step_output}")
     
     # 从数据层获取历史消息
     history_steps = data_layer.get_thread_messages(thread_id)
+    # [DEBUG] print(f"[on_chat_resume] data_layer.get_thread_messages 返回 {len(history_steps)} 条")
     
     # 重建会话历史（转换为标准格式）
     history = []
@@ -193,13 +208,18 @@ async def on_chat_resume(thread: dict):
         # 只提取用户消息和助手回复
         if step_type == "user_message":
             history.append({"role": "user", "content": step_output})
+            # [DEBUG] print(f"[on_chat_resume]   添加 user 消息: {step_output[:30]}...")
         elif step_type == "assistant_message" or step_name == "assistant":
             history.append({"role": "assistant", "content": step_output})
+            # [DEBUG] print(f"[on_chat_resume]   添加 assistant 消息: {step_output[:30]}...")
+        # [DEBUG] else:
+        # [DEBUG]     print(f"[on_chat_resume]   跳过消息: type={step_type}, name={step_name}")
     
     # 保存到当前会话
     cl.user_session.set("history", history)
     
-    print(f"[on_chat_resume] 已加载 {len(history)} 条历史消息")
+    # [DEBUG] print(f"[on_chat_resume] 最终 history 列表包含 {len(history)} 条消息")
+    # [DEBUG] print(f"{'='*60}\n")
 
 
 @cl.on_message
@@ -235,11 +255,11 @@ async def on_message(message: cl.Message):
         initial_state["conversation_history"] = recent_history
         
         # 调试日志：打印初始状态关键信息
-        print('\n' + '=' * 80)
-        print('[DEBUG] 收到用户查询:', user_query)
-        print('[DEBUG] 初始状态:', {k: initial_state.get(k) for k in ['user_query', 'company_name', 'intent', 'need_financial', 'need_listing']})
-        print('[DEBUG] 会话历史长度:', len(recent_history))
-        print('=' * 80)
+        # [DEBUG] print('\n' + '=' * 80)
+        # [DEBUG] print('[DEBUG] 收到用户查询:', user_query)
+        # [DEBUG] print('[DEBUG] 初始状态:', {k: initial_state.get(k) for k in ['user_query', 'company_name', 'intent', 'need_financial', 'need_listing']})
+        # [DEBUG] print('[DEBUG] 会话历史长度:', len(recent_history))
+        # [DEBUG] print('=' * 80)
         
         # 执行 LangGraph 工作流（流式处理）
         result_state = {}
@@ -258,9 +278,9 @@ async def on_message(message: cl.Message):
                 
                 # 调试日志：打印每个节点的关键输出
                 if isinstance(node_output, dict):
-                    debug_keys = ['company_name', 'intent', 'need_financial', 'need_listing', 'financial_data', 'listing_data', 'card_json', 'errors']
-                    print('[DEBUG] step =', step_count, 'node =', node_name)
-                    print('[DEBUG] 节点输出片段:', {k: node_output.get(k) for k in debug_keys if k in node_output})
+                    # [DEBUG] debug_keys = ['company_name', 'intent', 'need_financial', 'need_listing', 'financial_data', 'listing_data', 'card_json', 'errors']
+                    # [DEBUG] print('[DEBUG] step =', step_count, 'node =', node_name)
+                    # [DEBUG] print('[DEBUG] 节点输出片段:', {k: node_output.get(k) for k in debug_keys if k in node_output})
                 
                     # 合并当前节点的状态更新到总状态中
                     # 对于列表类字段（如 errors / trace），LangGraph 已在内部负责合并
@@ -268,8 +288,8 @@ async def on_message(message: cl.Message):
                     result_state.update(node_output)
         
         # 调试日志：打印最终聚合状态
-        print('[DEBUG] 最终 result_state 关键信息:', {k: result_state.get(k) for k in ['company_name', 'intent', 'need_financial', 'need_listing', 'financial_data', 'listing_data', 'card_json', 'errors']})
-        print('=' * 80 + '\n')
+        # [DEBUG] print('[DEBUG] 最终 result_state 关键信息:', {k: result_state.get(k) for k in ['company_name', 'intent', 'need_financial', 'need_listing', 'financial_data', 'listing_data', 'card_json', 'errors']})
+        # [DEBUG] print('=' * 80 + '\n')
         
         # 结束处理状态消息
         await processing_msg.update()
@@ -333,28 +353,10 @@ async def on_message(message: cl.Message):
         history.append({"role": "assistant", "content": ai_reply_content})
         cl.user_session.set("history", history)
         
-        # ==================== 保存消息到数据层 ====================
+        # ==================== 消息保存说明 ====================
+        # 注意：Chainlit 框架会自动调用 create_step 保存消息
+        # 我们不需要手动保存，否则会导致重复
         thread_id = cl.context.session.thread_id
-        
-        # 保存用户消息
-        await data_layer.create_step({
-            "id": f"{thread_id}_user_{len(history)}",
-            "threadId": thread_id,
-            "type": "user_message",
-            "name": "user",
-            "output": user_query,
-            "createdAt": datetime.now().isoformat()
-        })
-        
-        # 保存 AI 回复
-        await data_layer.create_step({
-            "id": f"{thread_id}_assistant_{len(history)}",
-            "threadId": thread_id,
-            "type": "assistant_message",
-            "name": "assistant",
-            "output": ai_reply_content,
-            "createdAt": datetime.now().isoformat()
-        })
         
         # ==================== 智能更新会话名称 ====================
         # 获取当前会话信息，如果名称是默认值则更新
