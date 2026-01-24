@@ -49,6 +49,7 @@ def generate_chat_reply(state: State) -> str:
     生成对话回复
     
     当 intent=chat 时调用，使用轻量级模型生成自然对话回复
+    支持传入对话历史以理解指代关系（如"他"、"它"）
     """
     # 如果已经有回复了，直接返回
     if state.get("chat_reply"):
@@ -67,15 +68,34 @@ def generate_chat_reply(state: State) -> str:
         # 加载提示词
         system_prompt = load_assistant_prompt()
         
-        # 构造消息
+        # 获取对话历史，构造完整的消息列表
+        history = state.get("conversation_history", [])
+        
+        # 构造消息列表：系统提示 + 历史对话 + 当前查询
         llm = get_model("chat")
-        messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=state["user_query"])
-        ]
+        messages = [SystemMessage(content=system_prompt)]
+        
+        # 添加历史对话（最多取最近10条，每条截断到500字符以平衡上下文完整性与token预算）
+        for msg in history[-10:]:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            # 截断过长的历史消息（500字符阈值适配金融分析场景，避免截断关键信息）
+            if len(content) > 500:
+                content = content[:500] + "..."
+            
+            if role == "user":
+                messages.append(HumanMessage(content=content))
+            else:
+                # assistant 角色使用 AIMessage
+                from langchain_core.messages import AIMessage
+                messages.append(AIMessage(content=content))
+        
+        # 添加当前用户查询
+        messages.append(HumanMessage(content=state["user_query"]))
         
         # 调用模型
-        print(f"[INFO] formatter 调用 LLM 生成对话回复...")
+        history_len = len(history)
+        print(f"[INFO] formatter 调用 LLM 生成对话回复（历史消息数: {history_len}）...")
         response = llm.invoke(messages)
         return response.content.strip()
         

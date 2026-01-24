@@ -71,8 +71,8 @@ def build_llm_prompt(user_query: str, history: List[Dict[str, str]] = None) -> s
             role = "用户" if msg.get("role") == "user" else "助手"
             content = msg.get("content", "")
             # 限制每条历史消息长度，避免过长
-            if len(content) > 200:
-                content = content[:200] + "..."
+            if len(content) > 500:
+                content = content[:500] + "..."
             history_text += f"{role}: {content}\n"
         history_text += "\n"
     
