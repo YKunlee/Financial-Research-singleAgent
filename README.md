@@ -7,10 +7,13 @@ Financial Research Agent automates equity research by collecting market data, fi
 
 ```
 Financial-Research-multiAgent/
-├── app.py                  # Chainlit entry / Chainlit 入口
+├── app.py                  # Chainlit entry / Chainlit 入口（只读向量库）
 ├── .chainlit               # Chainlit config / Chainlit 配置
 ├── .env                    # Environment variables / 环境变量
 ├── requirements.txt        # Dependencies / 依赖列表
+├── data/
+│   ├── pdfs/               # PDF documents to index / 待索引的 PDF 文档
+│   └── chroma_db/          # ChromaDB storage / 向量库持久化目录
 ├── src/
 │   ├── models.py           # Multi-model manager / 多模型配置管理
 │   ├── state.py            # LangGraph State schema / LangGraph State 结构
@@ -18,7 +21,12 @@ Financial-Research-multiAgent/
 │   ├── nodes/              # Agent logic nodes / Agent 逻辑节点
 │   │   ├── analyzer.py     # Intent + entity parsing / 意图识别与公司名抽取
 │   │   ├── fetcher.py      # Fan-out dispatcher / 分发与并行触发
+│   │   ├── retriever.py    # RAG retrieval node / RAG 检索节点
 │   │   └── formatter.py    # Card JSON builder / 前端卡片 JSON 组装
+│   ├── rag/                # RAG module (读写分离) / RAG 模块
+│   │   ├── loader.py       # PDF parsing / PDF 解析与切分
+│   │   ├── vectorstore.py  # ChromaDB operations / 向量库读取
+│   │   └── ingest.py       # Indexing script / 索引脚本（写操作）
 │   ├── tools/              # Data tools / 数据抓取工具
 │   │   ├── financial.py    # Market cap & profit / 市值/盈利
 │   │   └── listing.py      # Listing info / 上市信息
@@ -60,9 +68,23 @@ python -m chainlit run app.py -w
 
 应用将在浏览器中自动打开，访问地址：`http://localhost:8000`，直接输入公司名或问题即可查询
 
-### 4. 使用示例
+## RAG 知识库 / Knowledge Base
+
+采用读写分离设计：`app.py` 只读取向量库，索引操作由 `ingest.py` 独立执行。
+
+### 索引文档
+```bash
+# 1. 将 PDF 放入 data/pdfs/ 目录
+# 2. 运行索引命令
+python -m src.rag.ingest                       # 增量索引（只处理新文件）
+python -m src.rag.ingest --force               # 强制重建全部索引
+python -m src.rag.ingest --dir ./custom_pdfs   # 指定自定义目录
+```
+
+### 使用示例
 - **查询财务数据**：输入 "腾讯的市值是多少？"
 - **查询上市信息**：输入 "小米什么时候上市的？"
+- **知识库问答**：输入相关问题，系统会检索已索引的 PDF 内容回答
 - **日常对话**：输入 "你好"
 
 ## Features / 功能特性
