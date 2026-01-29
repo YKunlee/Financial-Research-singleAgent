@@ -218,3 +218,11 @@ backup_old_frontend/
 *.db-wal
 *.db-shm
 chainlit_data.db*
+
+# Vector database (向量数据库，由 RAG 模块生成)
+data/chroma_db/
+
+# IDE specific files (IDE 相关文件)
+.qoder/
+.idea/
+.vscode/
