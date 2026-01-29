@@ -50,6 +50,7 @@ def generate_chat_reply(state: State) -> str:
     
     当 intent=chat 时调用，使用轻量级模型生成自然对话回复
     支持传入对话历史以理解指代关系（如"他"、"它"）
+    支持使用 RAG 检索到的上下文增强回复
     """
     # 如果已经有回复了，直接返回
     if state.get("chat_reply"):
@@ -67,6 +68,23 @@ def generate_chat_reply(state: State) -> str:
     try:
         # 加载提示词
         system_prompt = load_assistant_prompt()
+        
+        # 获取 RAG 检索结果
+        rag_context = state.get("context", [])
+        
+        # 去重：由于 LangGraph 的 operator.add 可能导致重复
+        rag_context = list(dict.fromkeys(rag_context))
+        
+        # 调试日志：打印 state 中的 context
+        print(f"[DEBUG] formatter 收到的 state.context (去重后): {len(rag_context)} 条")
+        
+        # 如果有 RAG 上下文，将其加入系统提示
+        if rag_context:
+            context_text = "\n\n".join(rag_context)
+            system_prompt += f"\n\n【参考资料】\n以下是从知识库中检索到的相关信息，请基于这些信息回答用户问题：\n\n{context_text}"
+            print(f"[INFO] formatter 使用 RAG 上下文: {len(rag_context)} 条, 总长度 {len(context_text)} 字符")
+        else:
+            print(f"[WARN] formatter 未收到 RAG 上下文，state.context 为空")
         
         # 获取对话历史，构造完整的消息列表
         history = state.get("conversation_history", [])

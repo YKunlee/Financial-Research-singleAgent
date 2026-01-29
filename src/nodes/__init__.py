@@ -2,6 +2,7 @@
 节点包 - 流程里的各个"岗位"
 
 把整个查询流程想象成流水线，每个节点就是一个岗位：
+- retriever：RAG 检索岗位，从知识库中检索相关文档片段
 - analyzer：第一道岗位，看用户说了啥，提取出公司名和想查什么
 - fetcher：中间岗位，根据需求分配任务，可能同时派活给多个工具
 - formatter：最后一道岗位，把查到的数据整理成前端需要的格式
@@ -12,11 +13,13 @@
 from .analyzer import analyzer_node
 from .fetcher import fetcher_node, should_call_financial, should_call_listing, all_parallel_done
 from .formatter import formatter_node
+from .retriever import retrieve_node
 
 __all__ = [
     "analyzer_node",
     "fetcher_node",
     "formatter_node",
+    "retrieve_node",
     "should_call_financial",
     "should_call_listing",
     "all_parallel_done",

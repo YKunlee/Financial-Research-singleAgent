@@ -76,6 +76,8 @@ class State(TypedDict):
     card_json: Optional[Dict[str, Any]]
     # 会话历史记忆（最近5轮对话的消息列表）
     conversation_history: Annotated[List[Dict[str, str]], operator.add]
+    # RAG 检索结果（从向量库检索的相关文档片段）
+    context: Annotated[List[str], operator.add]
     # 控制与诊断（使用 Annotated 支持并发追加）
     errors: Annotated[List[str], operator.add]
     trace: Annotated[List[str], operator.add]
@@ -101,6 +103,7 @@ def make_initial_state(user_query: str) -> State:
         "chat_reply": None,
         "card_json": None,
         "conversation_history": [],  # 空列表,后续由 app.py 填充
+        "context": [],  # RAG 检索结果，由 retrieve_node 填充
         "errors": [],
         "trace": [],
         "parallel_done": {"financial": False, "listing": False},

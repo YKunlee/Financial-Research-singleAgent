@@ -105,15 +105,17 @@ class ModelManager:
     def chat_model(self) -> ChatOpenAI:
         """
         对话模型 (节点专用):专注自然语言回复、总结
-        
+            
         这里与 analyzer_model 共用同一个底层模型名称,只是temperature和用途不同;
-        多模型选择(例如“DeepSeek / GPT-4o-mini”)交给前端控制。
+        多模型选择(例如"DeepSeek / GPT-4o-mini")交给前端控制。
+            
+        温度设为 0.0 保证 RAG 回复的准确性和一致性
         """
         if "chat" not in self._models:
             self._models["chat"] = self._create_model({
                 "model": self.settings.model_name,
                 "api_key": self.settings.get_api_key(),
-                "temperature": 0.7,
+                "temperature": 0.0,  # 降低温度确保回复准确
                 "max_tokens": 2048,
             })
         return self._models["chat"]

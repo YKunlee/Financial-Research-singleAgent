@@ -6,12 +6,18 @@ Chainlit 集成入口 - 金融研究 Agent
 2. 调用 LangGraph 工作流
 3. 实时流式展示处理进度
 4. 格式化输出最终结果
+5. 读取现有向量库进行 RAG 检索（只读模式）
+
+读写分离设计：
+- 本模块只负责"读"操作（向量检索）
+- 文档索引请使用: python -m src.rag.ingest
 """
 
 import chainlit as cl
 from pathlib import Path
 import sys
 from datetime import datetime
+import asyncio
 
 # 确保可以导入 src 模块
 project_root = Path(__file__).parent
@@ -22,10 +28,78 @@ from src.state import make_initial_state
 from src.data_layer import SQLiteDataLayer  # 使用 SQLite 持久化存储
 
 
+# ==================== RAG 模块导入（只读模式） ====================
+# 读写分离：app.py 只负责读取向量库，索引由 ingest.py 独立执行
+# 延迟导入，避免启动时加载嵌入模型
+_vector_store = None
+
+# PDF 文件存放目录（仅用于提示信息）
+PDF_DIR = Path("./data/pdfs")
+
+
+def get_vector_store():
+    """
+    获取向量库实例（只读模式，延迟加载）
+    
+    使用 ChromaDB PersistentClient 连接现有的向量库，
+    不执行任何索引操作，确保应用快速启动。
+    """
+    global _vector_store
+    if _vector_store is None:
+        from src.rag.vectorstore import VectorStore
+        _vector_store = VectorStore()
+    return _vector_store
+
+
 # ==================== 数据层初始化 ====================
 # 创建SQLite数据层实例，对话历史持久化存储到数据库
 # 数据库文件位置：项目根目录下的 chainlit_data.db
 data_layer = SQLiteDataLayer(db_path="chainlit_data.db")
+
+
+# ==================== 应用启动时加载向量库（只读） ====================
+# 读写分离：启动时只读取现有向量库，不执行索引操作
+# 索引操作请使用: python -m src.rag.ingest
+_rag_initialized = False
+_rag_doc_count = 0
+_rag_sources = []
+
+def initialize_rag():
+    """
+    应用启动时加载 RAG 知识库（只读模式）
+    
+    读写分离策略：
+    - 此处只读取现有向量库状态，不执行任何索引操作
+    - 如需更新索引，请单独运行: python -m src.rag.ingest
+    - 避免启动时锁库，确保应用快速启动
+    """
+    global _rag_initialized, _rag_doc_count, _rag_sources
+    if _rag_initialized:
+        return
+    
+    print("\n" + "="*60)
+    print("[RAG] 正在加载知识库（只读模式）...")
+    
+    try:
+        # 只读取现有向量库状态，不执行索引
+        store = get_vector_store()
+        _rag_doc_count = store.get_document_count()
+        _rag_sources = store.get_all_sources()
+        
+        if _rag_doc_count > 0:
+            print(f"[RAG] ✓ 知识库就绪，包含 {_rag_doc_count} 个文档片段（来自 {len(_rag_sources)} 个文件）")
+        else:
+            print(f"[RAG] 知识库为空")
+            print(f"[RAG] 请先运行索引命令: python -m src.rag.ingest")
+        
+        _rag_initialized = True
+    except Exception as e:
+        print(f"[RAG] ✗ 加载失败: {e}")
+    
+    print("="*60 + "\n")
+
+# 应用启动时加载向量库（只读，不索引）
+initialize_rag()
 
 
 @cl.data_layer
@@ -97,6 +171,7 @@ async def on_chat_start():
     我们的策略：
     1. 先清理该用户的空会话（拿了号但没点单的）
     2. 再创建新会话（因为 Chainlit 已经给了新号码牌）
+    3. 检查 RAG 向量库状态
     """
     # 初始化会话历史存储
     cl.user_session.set("history", [])
@@ -152,11 +227,19 @@ async def on_chat_start():
         "tags": []
     })
     print(f"[on_chat_start] ✓ 新会话创建成功")
+    
+    # ==================== 检查 RAG 向量库状态 ====================
+    # 使用启动时已缓存的状态，不再重复扫描
+    if _rag_doc_count > 0:
+        rag_status = f"\n\n📚 **知识库状态**: 已加载 {_rag_doc_count} 个文档片段（来自 {len(_rag_sources)} 个文件）"
+    else:
+        rag_status = f"\n\n📚 **知识库状态**: 空（请运行 `python -m src.rag.ingest` 索引文档）"
+    
     print(f"{'='*60}\n")
     
     # 发送欢迎消息
     await cl.Message(
-        content="👋 你好！我是金融研究助手。\n\n你可以：\n- 询问公司的财务数据（如：腾讯的市值是多少？）\n- 查询上市信息（如：小米什么时候上市的？）\n- 日常对话（如：你好）\n\n请直接输入公司名或问题即可开始。"
+        content=f"👋 你好！我是金融研究助手。\n\n你可以：\n- 询问公司的财务数据（如：腾讯的市值是多少？）\n- 查询上市信息（如：小米什么时候上市的？）\n- 基于知识库进行问答（将 PDF 放入 `data/pdfs/` 后运行索引命令）{rag_status}"
     ).send()
 
 
@@ -229,7 +312,7 @@ async def on_message(message: cl.Message):
     
     流程：
     1. 接收用户输入
-    2. 初始化 State
+    2. 初始化 State（自动包含 RAG 检索）
     3. 调用 LangGraph 执行流程
     4. 实时展示各节点处理状态
     5. 返回最终结果
