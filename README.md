@@ -43,6 +43,11 @@ Financial-Research-multiAgent/
   - GPT-4o: Complex financial analysis / 复杂财务分析
   - DeepSeek/GPT-4o-mini: User chat & light tasks / 用户对话与轻量任务
 - **LLM**: Intent and entity extraction via prompts / 意图识别与实体抽取(通过 prompts 配置)
+- **RAG Pipeline**: Retrieval-Augmented Generation for document Q&A / 检索增强生成，用于文档问答
+  - PyMuPDF4LLM: PDF parsing to Markdown / PDF 解析转 Markdown
+  - MarkdownHeaderTextSplitter: Semantic chunking / 按标题语义切分
+  - BAAI/bge-small-zh-v1.5: Chinese embedding model / 中文向量模型
+  - ChromaDB: Persistent vector store / 持久化向量数据库
 
 ## Quick Start / 快速开始
 
