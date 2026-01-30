@@ -73,12 +73,23 @@ python -m chainlit run app.py -w
 采用读写分离设计：`app.py` 只读取向量库，索引操作由 `ingest.py` 独立执行。
 
 ### 索引文档
+
+1. 将 PDF 放入 `data/pdfs/` 目录
+2. 运行索引命令：
+
+**增量索引**（只处理新文件）：
 ```bash
-# 1. 将 PDF 放入 data/pdfs/ 目录
-# 2. 运行索引命令
-python -m src.rag.ingest                       # 增量索引（只处理新文件）
-python -m src.rag.ingest --force               # 强制重建全部索引
-python -m src.rag.ingest --dir ./custom_pdfs   # 指定自定义目录
+python -m src.rag.ingest
+```
+
+**强制重建全部索引**：
+```bash
+python -m src.rag.ingest --force
+```
+
+**指定自定义目录**：
+```bash
+python -m src.rag.ingest --dir ./custom_pdfs
 ```
 
 ### 使用示例
