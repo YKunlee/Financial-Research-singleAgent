@@ -45,9 +45,9 @@ Financial-Research-multiAgent/
 - **LLM**: Intent and entity extraction via prompts / 意图识别与实体抽取(通过 prompts 配置)
 - **RAG Pipeline**: Retrieval-Augmented Generation for document Q&A / 检索增强生成，用于文档问答
   - PyMuPDF4LLM: PDF parsing to Markdown / PDF 解析转 Markdown
-  - MarkdownHeaderTextSplitter: Semantic chunking / 按标题语义切分
+  - MarkdownHeaderTextSplitter + RecursiveCharacterTextSplitter: Two-stage chunking (chunk_size=600, overlap=60) / 两阶段文本切分
   - BAAI/bge-small-zh-v1.5: Chinese embedding model / 中文向量模型
-  - ChromaDB: Persistent vector store / 持久化向量数据库
+  - ChromaDB: Persistent vector store (cosine similarity) / 持久化向量数据库
 
 ## Quick Start / 快速开始
 
@@ -76,6 +76,15 @@ python -m chainlit run app.py -w
 ## RAG 知识库 / Knowledge Base
 
 采用读写分离设计：`app.py` 只读取向量库，索引操作由 `ingest.py` 独立执行。
+
+### RAG 技术栈
+
+| 模块 | 技术 | 用途 |
+| --- | --- | --- |
+| PDF 解析 | PyMuPDF4LLM | 将 PDF 转为 Markdown，保留结构 |
+| 文本切分 | MarkdownHeaderTextSplitter + RecursiveCharacterTextSplitter | 两阶段切分，chunk_size=600，overlap=60 |
+| Embedding | BAAI/bge-small-zh-v1.5 | 中文语义向量表示 |
+| 向量存储 | ChromaDB PersistentClient | 本地持久化向量库（余弦相似度） |
 
 ### 索引文档
 
